@@ -85,6 +85,7 @@ interface DecisionEntry {
   action: string;
   reason: string;
   strategy: string;
+  slug?: string;
 }
 
 interface DeferredResolution {
@@ -402,8 +403,8 @@ export default function Dashboard() {
                 PAUSED: "🚨", RESUMED: "▶️",
               };
               return (
-                <div key={i} className="text-[10px] sm:text-xs font-mono text-gray-400 truncate">
-                  {icon[entry.action] || "ℹ️"} [{fmtTime(entry.time)}] {entry.strategy?.padEnd(15)} | {entry.reason}
+                <div key={i} className="text-[10px] sm:text-xs font-mono text-gray-400" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                  {icon[entry.action] || "ℹ️"} [{fmtTime(entry.time)}] {entry.strategy?.padEnd(15)} | {entry.reason}{entry.slug ? ` | ${entry.slug}` : ""}
                 </div>
               );
             })}
@@ -509,6 +510,8 @@ function EquityChart({ accounts }: { accounts: Record<string, AccountData> }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const initialRangeSet = useRef(false);
+  const prevDataLen = useRef(0);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -541,6 +544,7 @@ function EquityChart({ accounts }: { accounts: Record<string, AccountData> }) {
     });
 
     chartRef.current = chart;
+    initialRangeSet.current = false;
 
     // Add series for each mode
     const newSeries = new Map<string, ISeriesApi<"Line">>();
@@ -576,11 +580,12 @@ function EquityChart({ accounts }: { accounts: Record<string, AccountData> }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update data when accounts change
+  // Update data when accounts change — without resetting scroll position
   useEffect(() => {
     if (!chartRef.current) return;
 
     let hasData = false;
+    let totalLen = 0;
     for (const [mode] of Object.entries(MODE_CONFIG)) {
       const acct = accounts[mode];
       const series = seriesRefs.current.get(mode);
@@ -589,6 +594,7 @@ function EquityChart({ accounts }: { accounts: Record<string, AccountData> }) {
       const history = acct.equity_history || [];
       if (history.length === 0) continue;
       hasData = true;
+      totalLen += history.length;
 
       const data = history
         .map((pt) => ({
@@ -600,8 +606,9 @@ function EquityChart({ accounts }: { accounts: Record<string, AccountData> }) {
       series.setData(data);
     }
 
-    // Set visible range to last 3 hours
-    if (hasData && chartRef.current) {
+    // Only set visible range on FIRST data load — never reset user's scroll
+    if (hasData && !initialRangeSet.current && chartRef.current) {
+      initialRangeSet.current = true;
       const threeHoursAgo = (Math.floor(Date.now() / 1000) - 3 * 3600) as UTCTimestamp;
       const now = Math.floor(Date.now() / 1000) as UTCTimestamp;
       try {
@@ -610,7 +617,6 @@ function EquityChart({ accounts }: { accounts: Record<string, AccountData> }) {
           to: now,
         });
       } catch {
-        // If range is invalid, fit content instead
         chartRef.current.timeScale().fitContent();
       }
     }
