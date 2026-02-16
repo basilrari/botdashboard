@@ -1,21 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  Legend,
-} from "recharts";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { createChart, IChartApi, ISeriesApi, LineSeries, UTCTimestamp, ColorType, CrosshairMode } from "lightweight-charts";
 
 // ── Types ────────────────────────────────────────────────────────
 interface BotState {
   updated_at: string;
   uptime_seconds: number;
+  active_seconds: number;
+  paused_seconds: number;
   bot_paused: boolean;
   btc_price: number | null;
   chainlink_btc_price: number | null;
@@ -33,6 +26,7 @@ interface BotState {
   accounts: Record<string, AccountData>;
   decision_log: DecisionEntry[];
   deferred_resolutions: DeferredResolution[];
+  api_health_log?: ApiHealthEntry[];
 }
 
 interface MarketInfo {
@@ -104,6 +98,13 @@ interface DeferredResolution {
   check_after: number;
 }
 
+interface ApiHealthEntry {
+  time: string;
+  provider: string;
+  event: string;
+  detail: string;
+}
+
 // ── Config ───────────────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const REFRESH_MS = 2000;
@@ -119,10 +120,14 @@ function fmtTime(iso: string): string {
 }
 
 function fmtUptime(s: number): string {
-  const hrs = Math.floor(s / 3600);
+  if (s <= 0) return "0s";
+  const days = Math.floor(s / 86400);
+  const hrs = Math.floor((s % 86400) / 3600);
   const mins = Math.floor((s % 3600) / 60);
   const secs = Math.floor(s % 60);
-  return hrs > 0 ? `${hrs}h ${mins}m ${secs}s` : `${mins}m ${secs}s`;
+  if (days > 0) return `${days}d ${hrs}h ${mins}m`;
+  if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+  return `${mins}m ${secs}s`;
 }
 
 function fmtUsd(n: number | null | undefined): string {
@@ -161,27 +166,15 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchState]);
 
-  async function sendCommand(action: string) {
-    try {
-      await fetch(`${API_URL}/api/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-    } catch {
-      /* ignore */
-    }
-  }
-
   if (!state) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="text-4xl mb-4">⚡</div>
-          <p className="text-gray-400 text-lg">
+          <div className="text-3xl mb-4">⚡</div>
+          <p className="text-gray-400 text-sm">
             {error ? `Connection error: ${error}` : "Connecting to bot..."}
           </p>
-          <p className="text-gray-600 text-sm mt-2">
+          <p className="text-gray-600 text-xs mt-2">
             Make sure the API server is running at {API_URL}
           </p>
         </div>
@@ -196,58 +189,61 @@ export default function Dashboard() {
   const spread = Math.abs((state.btc_price || 0) - (state.chainlink_btc_price || 0));
   const windowPct = mkt ? Math.min(1, Math.max(0, mkt.seconds_elapsed / 300)) : 0;
 
-  // Build chart data
-  const chartData = buildChartData(accounts);
+  // CLOB WS status logic
+  const clobStatus = getClobWsStatus(state);
 
   return (
-    <div className="max-w-[1600px] mx-auto p-4 space-y-4">
+    <div className="dashboard-container">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">⚡ BTC 5-Min Paper Trader</h1>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">
-            Last update: {fmtTime(state.updated_at)}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-lg sm:text-xl font-bold tracking-tight">⚡ BTC 5-Min Paper Trader</h1>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] sm:text-xs text-gray-500">
+            {fmtTime(state.updated_at)}
           </span>
           <span className={`status-dot ${error ? "red" : "green"}`} />
         </div>
       </div>
 
+      {/* Uptime Bar */}
+      <div className="uptime-bar">
+        <div className="uptime-item">
+          <span className="uptime-label">Total</span>
+          <span className="uptime-value">{fmtUptime(state.uptime_seconds)}</span>
+        </div>
+        <div className="uptime-item">
+          <span className="uptime-label">Active</span>
+          <span className="uptime-value text-green-400">{fmtUptime(state.active_seconds)}</span>
+        </div>
+        <div className="uptime-item">
+          <span className="uptime-label">Paused</span>
+          <span className="uptime-value text-red-400">{fmtUptime(state.paused_seconds)}</span>
+        </div>
+      </div>
+
       {/* Paused Banner */}
       {state.bot_paused && (
-        <div className="paused-banner flex items-center gap-3">
-          <span className="text-xl">🚨</span>
+        <div className="paused-banner flex items-center gap-2">
+          <span className="text-lg">🚨</span>
           <div>
-            <p className="font-semibold text-red-400">BOT PAUSED</p>
-            <p className="text-sm text-red-300/70">
-              One or more APIs are down or stale. No trades until all feeds recover.
+            <p className="font-semibold text-red-400 text-sm">BOT PAUSED</p>
+            <p className="text-xs text-red-300/70">
+              APIs down or stale. No trades until recovery.
             </p>
           </div>
         </div>
       )}
 
-      {/* Controls */}
-      <div className="flex gap-3">
-        <button className="btn btn-secondary" onClick={() => sendCommand("skip")}>
-          ⏭️ Skip Market
-        </button>
-        <button className="btn btn-danger" onClick={() => sendCommand("stop")}>
-          🛑 Stop Bot
-        </button>
-        <div className="ml-auto flex items-center gap-4 text-sm text-gray-400">
-          <span>Uptime: <strong className="text-white">{fmtUptime(state.uptime_seconds)}</strong></span>
-        </div>
-      </div>
-
       {/* Live Prices */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <MetricCard
           icon="⛓️"
-          label="Chainlink BTC/USD"
-          value={state.chainlink_btc_price ? fmtUsd(state.chainlink_btc_price) : "— STALE —"}
-          sublabel={state.rtds_stale ? `⚠️ ${state.rtds_seconds_since_update.toFixed(0)}s ago` : undefined}
+          label="Chainlink BTC"
+          value={state.chainlink_btc_price ? fmtUsd(state.chainlink_btc_price) : "STALE"}
+          sublabel={state.rtds_stale ? `⚠️ ${state.rtds_seconds_since_update.toFixed(0)}s` : undefined}
           alert={state.rtds_stale}
         />
-        <MetricCard icon="🅱️" label="Binance BTC/USDT" value={fmtUsd(state.btc_price)} />
+        <MetricCard icon="🅱️" label="Binance BTC" value={fmtUsd(state.btc_price)} />
         <MetricCard icon="📊" label="Spread" value={fmtUsd(spread)} />
         <MetricCard
           icon="🎯"
@@ -257,23 +253,23 @@ export default function Dashboard() {
       </div>
 
       {/* BTC Moves */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2">
         <MetricCard
           icon={Math.abs(btcMove) >= THRESHOLD ? "✅" : "❌"}
-          label="Binance Move"
-          value={`$${btcMove >= 0 ? "+" : ""}${btcMove.toFixed(2)}`}
+          label="BN Move"
+          value={`$${btcMove >= 0 ? "+" : ""}${btcMove.toFixed(0)}`}
           valueColor={Math.abs(btcMove) >= THRESHOLD ? "text-green-400" : "text-gray-400"}
         />
         <MetricCard
           icon={Math.abs(clMove) >= THRESHOLD ? "✅" : "❌"}
-          label="Chainlink Move"
-          value={`$${clMove >= 0 ? "+" : ""}${clMove.toFixed(2)}`}
+          label="CL Move"
+          value={`$${clMove >= 0 ? "+" : ""}${clMove.toFixed(0)}`}
           valueColor={Math.abs(clMove) >= THRESHOLD ? "text-green-400" : "text-gray-400"}
         />
         <MetricCard
           icon={Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD ? "✅" : "⏳"}
           label="Dual ±$26"
-          value={Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD ? "CONFIRMED" : "Not yet"}
+          value={Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD ? "YES" : "No"}
           valueColor={Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD ? "text-green-400" : "text-yellow-400"}
         />
       </div>
@@ -281,57 +277,57 @@ export default function Dashboard() {
       {/* Market Window */}
       {mkt && (
         <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">📊 {mkt.title}</h2>
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+            <h2 className="text-sm sm:text-base font-semibold truncate max-w-[70%]">📊 {mkt.title}</h2>
             {mkt.slug && (
               <a
                 href={`https://polymarket.com/event/${mkt.slug}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:underline"
+                className="text-[10px] text-blue-400 hover:underline shrink-0"
               >
-                View on Polymarket ↗
+                Polymarket ↗
               </a>
             )}
           </div>
-          <div className="grid grid-cols-4 gap-3 mb-3 text-center">
+          <div className="grid grid-cols-4 gap-2 mb-2 text-center">
             <div>
               <div className="metric-label">Elapsed</div>
-              <div className="text-lg font-mono">{mkt.seconds_elapsed.toFixed(0)}s</div>
+              <div className="text-sm font-mono">{mkt.seconds_elapsed.toFixed(0)}s</div>
             </div>
             <div>
-              <div className="metric-label">Remaining</div>
-              <div className="text-lg font-mono">{mkt.seconds_remaining.toFixed(0)}s</div>
+              <div className="metric-label">Left</div>
+              <div className="text-sm font-mono">{mkt.seconds_remaining.toFixed(0)}s</div>
             </div>
             <div>
-              <div className="metric-label">YES Price</div>
-              <div className="text-lg font-mono">{state.yes_price.toFixed(4)}</div>
+              <div className="metric-label">YES</div>
+              <div className="text-sm font-mono">{state.yes_price.toFixed(3)}</div>
             </div>
             <div>
-              <div className="metric-label">NO Price</div>
-              <div className="text-lg font-mono">{state.no_price.toFixed(4)}</div>
+              <div className="metric-label">NO</div>
+              <div className="text-sm font-mono">{state.no_price.toFixed(3)}</div>
             </div>
           </div>
           <div className="progress-track">
             <div className="progress-fill" style={{ width: `${windowPct * 100}%` }} />
           </div>
-          <p className="text-xs text-gray-500 mt-1 text-right">
-            {(windowPct * 100).toFixed(0)}% of window elapsed
+          <p className="text-[10px] text-gray-500 mt-1 text-right">
+            {(windowPct * 100).toFixed(0)}%
           </p>
         </div>
       )}
 
       {/* Account Performance */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {Object.entries(MODE_CONFIG).map(([mode, cfg]) => {
           const acct = accounts[mode];
           if (!acct) return null;
           return (
             <div key={mode} className="card">
-              <h3 className={`text-lg font-semibold mb-3 ${cfg.cls}`}>
+              <h3 className={`text-sm font-semibold mb-2 ${cfg.cls}`}>
                 {cfg.emoji} {acct.label}
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-1 text-xs">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Equity</span>
                   <span className="font-mono font-bold">{fmtUsd(acct.equity)}</span>
@@ -353,8 +349,8 @@ export default function Dashboard() {
                   </span>
                 </div>
                 {acct.pending_trade && (
-                  <div className="mt-2 p-2 rounded bg-blue-500/10 border border-blue-500/20 text-sm">
-                    🔄 Pending: <strong>{acct.pending_trade.side}</strong> @{" "}
+                  <div className="mt-1 p-1.5 rounded bg-blue-500/10 border border-blue-500/20 text-[11px]">
+                    🔄 <strong>{acct.pending_trade.side}</strong> @{" "}
                     {acct.pending_trade.pm_price.toFixed(4)} ({fmtUsd(acct.pending_trade.size_usdc)})
                   </div>
                 )}
@@ -364,66 +360,16 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Equity Chart */}
+      {/* Equity Chart — TradingView lightweight-charts */}
       <div className="card">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">📉 Equity Over Time</h2>
-          <button className="btn btn-secondary text-xs" onClick={() => sendCommand("reset_chart")}>
-            🔄 Reset
-          </button>
-        </div>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={chartData}>
-              <XAxis
-                dataKey="time"
-                tick={{ fill: "#64748b", fontSize: 11 }}
-                axisLine={{ stroke: "#1e293b" }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: "#64748b", fontSize: 11 }}
-                axisLine={{ stroke: "#1e293b" }}
-                tickLine={false}
-                domain={["dataMin - 1", "dataMax + 1"]}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: "#1e293b",
-                  border: "1px solid #334155",
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-                labelStyle={{ color: "#94a3b8" }}
-              />
-              <Legend />
-              <ReferenceLine y={100} stroke="#4b5563" strokeDasharray="3 3" label={{ value: "$100", fill: "#64748b", fontSize: 11 }} />
-              {Object.entries(MODE_CONFIG).map(([mode, cfg]) => {
-                const acct = accounts[mode];
-                if (!acct) return null;
-                return (
-                  <Line
-                    key={mode}
-                    type="monotone"
-                    dataKey={acct.label}
-                    stroke={cfg.color}
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                );
-              })}
-            </LineChart>
-          </ResponsiveContainer>
-        ) : (
-          <p className="text-gray-500 text-center py-8">Chart will appear after a few minutes of data...</p>
-        )}
+        <h2 className="text-sm sm:text-base font-semibold mb-2">📉 Equity Over Time</h2>
+        <EquityChart accounts={accounts} />
       </div>
 
       {/* Trade Events */}
       <div className="card">
-        <h2 className="text-lg font-semibold mb-3">📋 Trade & Signal Log</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <h2 className="text-sm sm:text-base font-semibold mb-2">📋 Trade & Signal Log</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {Object.entries(MODE_CONFIG).map(([mode, cfg]) => {
             const acct = accounts[mode];
             if (!acct) return null;
@@ -443,8 +389,8 @@ export default function Dashboard() {
 
       {/* Decision Log */}
       <details className="card">
-        <summary className="cursor-pointer text-lg font-semibold">📝 Raw Decision Log</summary>
-        <div className="mt-3 space-y-1 max-h-64 overflow-y-auto">
+        <summary className="cursor-pointer text-sm font-semibold">📝 Raw Decision Log</summary>
+        <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
           {(state.decision_log || [])
             .slice()
             .reverse()
@@ -456,7 +402,7 @@ export default function Dashboard() {
                 PAUSED: "🚨", RESUMED: "▶️",
               };
               return (
-                <div key={i} className="text-xs font-mono text-gray-400">
+                <div key={i} className="text-[10px] sm:text-xs font-mono text-gray-400 truncate">
                   {icon[entry.action] || "ℹ️"} [{fmtTime(entry.time)}] {entry.strategy?.padEnd(15)} | {entry.reason}
                 </div>
               );
@@ -466,8 +412,8 @@ export default function Dashboard() {
 
       {/* System Health */}
       <div className="card">
-        <h2 className="text-lg font-semibold mb-3">🏥 System Health</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <h2 className="text-sm sm:text-base font-semibold mb-2">🏥 System Health</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           <HealthCard
             label="RTDS WebSocket"
             ok={state.rtds_connected && !state.rtds_stale}
@@ -488,20 +434,10 @@ export default function Dashboard() {
           />
           <HealthCard
             label="CLOB WebSocket"
-            ok={state.clob_ws_connected && state.clob_ws_seconds_since_update < 900}
-            warning={state.clob_ws_seconds_since_update >= 900}
-            status={
-              state.clob_ws_seconds_since_update >= 900
-                ? "Awaiting"
-                : state.clob_ws_connected
-                  ? "Live"
-                  : "Reconnecting"
-            }
-            detail={
-              state.clob_ws_seconds_since_update >= 900
-                ? "Waiting for market data"
-                : `${state.clob_ws_seconds_since_update.toFixed(0)}s ago`
-            }
+            ok={clobStatus.ok}
+            warning={clobStatus.warning}
+            status={clobStatus.status}
+            detail={clobStatus.detail}
           />
           <HealthCard
             label="Bot Status"
@@ -518,11 +454,170 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* API Health Log */}
+      {(state.api_health_log || []).length > 0 && (
+        <details className="card">
+          <summary className="cursor-pointer text-sm font-semibold">
+            📡 API Health Log ({state.api_health_log!.length})
+          </summary>
+          <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+            {(state.api_health_log || [])
+              .slice()
+              .reverse()
+              .map((entry, i) => {
+                const icon: Record<string, string> = {
+                  SYSTEM: "⚙️", CHAINLINK: "⛓️", CLOB_WS: "📡", BINANCE: "🅱️",
+                };
+                return (
+                  <div key={i} className="text-[10px] sm:text-xs font-mono text-gray-400 truncate">
+                    {icon[entry.provider] || "📡"} [{fmtTime(entry.time)}] {entry.event}: {entry.detail}
+                  </div>
+                );
+              })}
+          </div>
+        </details>
+      )}
+
       {/* Footer */}
-      <div className="text-center text-xs text-gray-600 py-2">
-        Polling {API_URL} every {REFRESH_MS / 1000}s • {lastFetch ? `Last fetch: ${new Date(lastFetch).toLocaleTimeString()}` : ""}
+      <div className="text-center text-[10px] text-gray-600 py-1">
+        Polling {API_URL} every {REFRESH_MS / 1000}s • {lastFetch ? new Date(lastFetch).toLocaleTimeString() : ""}
       </div>
     </div>
+  );
+}
+
+// ── CLOB WS Status Helper ────────────────────────────────────────
+function getClobWsStatus(state: BotState) {
+  const hasMarket = !!state.current_market;
+  const connected = state.clob_ws_connected;
+  const secsSince = state.clob_ws_seconds_since_update;
+
+  if (!connected) {
+    return { ok: false, warning: false, status: "Disconnected", detail: "Not connected" };
+  }
+  if (!hasMarket) {
+    return { ok: true, warning: true, status: "Idle", detail: "No active market" };
+  }
+  if (secsSince > 60) {
+    return { ok: false, warning: false, status: "Stale", detail: `${secsSince.toFixed(0)}s ago` };
+  }
+  return { ok: true, warning: false, status: "Connected", detail: `${secsSince.toFixed(0)}s ago` };
+}
+
+// ── TradingView Chart Component ──────────────────────────────────
+function EquityChart({ accounts }: { accounts: Record<string, AccountData> }) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    const chart = createChart(chartContainerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: "transparent" },
+        textColor: "#64748b",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: "rgba(30, 41, 59, 0.5)" },
+        horzLines: { color: "rgba(30, 41, 59, 0.5)" },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: "#1e293b",
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
+      timeScale: {
+        borderColor: "#1e293b",
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 5,
+      },
+      handleScroll: { vertTouchDrag: false },
+      handleScale: { axisPressedMouseMove: true },
+      width: chartContainerRef.current.clientWidth,
+      height: 280,
+    });
+
+    chartRef.current = chart;
+
+    // Add series for each mode
+    const newSeries = new Map<string, ISeriesApi<"Line">>();
+    for (const [mode, cfg] of Object.entries(MODE_CONFIG)) {
+      const acct = accounts[mode];
+      if (!acct) continue;
+      const series = chart.addSeries(LineSeries, {
+        color: cfg.color,
+        lineWidth: 2,
+        title: acct.label,
+        priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+        crosshairMarkerVisible: true,
+        lastValueVisible: true,
+      });
+      newSeries.set(mode, series);
+    }
+    seriesRefs.current = newSeries;
+
+    // Resize handler
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width } = entry.contentRect;
+        chart.applyOptions({ width });
+      }
+    });
+    ro.observe(chartContainerRef.current);
+
+    return () => {
+      ro.disconnect();
+      chart.remove();
+      chartRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update data when accounts change
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    let hasData = false;
+    for (const [mode] of Object.entries(MODE_CONFIG)) {
+      const acct = accounts[mode];
+      const series = seriesRefs.current.get(mode);
+      if (!acct || !series) continue;
+
+      const history = acct.equity_history || [];
+      if (history.length === 0) continue;
+      hasData = true;
+
+      const data = history
+        .map((pt) => ({
+          time: pt.ts as UTCTimestamp,
+          value: pt.equity,
+        }))
+        .sort((a, b) => a.time - b.time);
+
+      series.setData(data);
+    }
+
+    // Set visible range to last 3 hours
+    if (hasData && chartRef.current) {
+      const threeHoursAgo = (Math.floor(Date.now() / 1000) - 3 * 3600) as UTCTimestamp;
+      const now = Math.floor(Date.now() / 1000) as UTCTimestamp;
+      try {
+        chartRef.current.timeScale().setVisibleRange({
+          from: threeHoursAgo,
+          to: now,
+        });
+      } catch {
+        // If range is invalid, fit content instead
+        chartRef.current.timeScale().fitContent();
+      }
+    }
+  }, [accounts]);
+
+  return (
+    <div ref={chartContainerRef} className="chart-container" />
   );
 }
 
@@ -545,11 +640,11 @@ function MetricCard({
 }) {
   return (
     <div className={`card ${alert ? "border-red-500/50" : ""}`}>
-      <div className="metric-label mb-1">
+      <div className="metric-label mb-0.5">
         {icon} {label}
       </div>
       <div className={`metric-value ${valueColor || ""}`}>{value}</div>
-      {sublabel && <div className="text-xs text-red-400 mt-1">{sublabel}</div>}
+      {sublabel && <div className="text-[10px] text-red-400 mt-0.5">{sublabel}</div>}
     </div>
   );
 }
@@ -570,12 +665,12 @@ function HealthCard({
   const dotColor = warning ? "yellow" : ok ? "green" : "red";
   const textColor = warning ? "text-yellow-400" : ok ? "text-green-400" : "text-red-400";
   return (
-    <div className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02]">
+    <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02]">
       <span className={`status-dot ${dotColor}`} />
-      <div>
-        <div className="text-xs font-medium">{label}</div>
-        <div className={`text-xs ${textColor}`}>{status}</div>
-        <div className="text-[10px] text-gray-500">{detail}</div>
+      <div className="min-w-0">
+        <div className="text-[10px] sm:text-xs font-medium truncate">{label}</div>
+        <div className={`text-[10px] sm:text-xs ${textColor}`}>{status}</div>
+        <div className="text-[9px] text-gray-500 truncate">{detail}</div>
       </div>
     </div>
   );
@@ -607,22 +702,22 @@ function TradeColumn({
   };
 
   return (
-    <div>
-      <h3 className={`font-semibold mb-2 ${config.cls}`}>
+    <div className="min-w-0">
+      <h3 className={`text-xs sm:text-sm font-semibold mb-1 ${config.cls}`}>
         {config.emoji} {acct.label}
       </h3>
 
       {/* Waiting */}
       {deferred.length > 0 && (
-        <div className="mb-2">
-          <div className="text-xs font-medium text-purple-400 mb-1">⏳ Waiting ({deferred.length})</div>
+        <div className="mb-1">
+          <div className="text-[10px] font-medium text-purple-400 mb-0.5">⏳ Waiting ({deferred.length})</div>
           {deferred.map((d, i) => {
             const secsToCheck = Math.max(0, d.check_after - Date.now() / 1000);
             return (
               <div key={i} className="trade-card waiting">
                 <strong>{d.strategy}</strong> — {d.side} @ {d.entry_price.toFixed(4)}
                 <br />
-                {fmtUsd(d.size_usdc)} • Check in ~{(secsToCheck / 60).toFixed(0)}m
+                {fmtUsd(d.size_usdc)} • ~{(secsToCheck / 60).toFixed(0)}m
               </div>
             );
           })}
@@ -639,18 +734,18 @@ function TradeColumn({
         renderEvent={(e) => (
           <div className="trade-card win">
             <span className="text-green-400 font-semibold">+{fmtUsd(e.pnl)}</span>
-            {e.fee ? <span className="text-gray-500 text-xs"> (fee {fmtUsd(e.fee)})</span> : null}
+            {e.fee ? <span className="text-gray-500 text-[10px]"> (fee {fmtUsd(e.fee)})</span> : null}
             <span className="text-gray-500"> {e.pct_return?.toFixed(1)}%</span>
             <br />
-            <span className="text-gray-400 text-xs">
-              {e.strategy} | {e.side} @ {e.entry_price?.toFixed(4)} | Winner: {e.winning_side}
+            <span className="text-gray-400 text-[10px]">
+              {e.strategy} | {e.side} @ {e.entry_price?.toFixed(4)} | W: {e.winning_side}
             </span>
             {(e.binance_btc_move != null || e.size_usdc != null) && (
-              <div className="text-gray-500 text-xs mt-1">
-                BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | Size: {fmtUsd(e.size_usdc)}
+              <div className="text-gray-500 text-[10px] mt-0.5">
+                BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | {fmtUsd(e.size_usdc)}
               </div>
             )}
-            <div className="text-gray-600 text-[10px]">{fmtTime(e.time)}</div>
+            <div className="text-gray-600 text-[9px]">{fmtTime(e.time)}</div>
           </div>
         )}
       />
@@ -666,15 +761,15 @@ function TradeColumn({
           <div className="trade-card loss">
             <span className="text-red-400 font-semibold">{fmtUsd(e.pnl)}</span>
             <br />
-            <span className="text-gray-400 text-xs">
-              {e.strategy} | {e.side} @ {e.entry_price?.toFixed(4)} | Winner: {e.winning_side}
+            <span className="text-gray-400 text-[10px]">
+              {e.strategy} | {e.side} @ {e.entry_price?.toFixed(4)} | W: {e.winning_side}
             </span>
             {(e.binance_btc_move != null || e.size_usdc != null) && (
-              <div className="text-gray-500 text-xs mt-1">
-                BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | Size: {fmtUsd(e.size_usdc)}
+              <div className="text-gray-500 text-[10px] mt-0.5">
+                BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | {fmtUsd(e.size_usdc)}
               </div>
             )}
-            <div className="text-gray-600 text-[10px]">{fmtTime(e.time)}</div>
+            <div className="text-gray-600 text-[9px]">{fmtTime(e.time)}</div>
           </div>
         )}
       />
@@ -690,10 +785,10 @@ function TradeColumn({
           <div className="trade-card entry">
             <strong>{e.side}</strong> @ {e.entry_price?.toFixed(4)}
             <span className="text-gray-500"> ({fmtUsd(e.size_usdc)})</span>
-            <div className="text-gray-500 text-xs mt-1">
-              BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | Tick: {e.tick}s
+            <div className="text-gray-500 text-[10px] mt-0.5">
+              BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | T: {e.tick}s
             </div>
-            <div className="text-gray-600 text-[10px]">{fmtTime(e.time)}</div>
+            <div className="text-gray-600 text-[9px]">{fmtTime(e.time)}</div>
           </div>
         )}
       />
@@ -707,14 +802,14 @@ function TradeColumn({
         onToggle={() => toggleSection("near_misses")}
         renderEvent={(e) => (
           <div className="trade-card near-miss">
-            <span className="text-gray-400 text-xs">{e.reject_reason}</span>
-            <div className="text-gray-600 text-[10px]">{fmtTime(e.time)}</div>
+            <span className="text-gray-400 text-[10px]">{e.reject_reason}</span>
+            <div className="text-gray-600 text-[9px]">{fmtTime(e.time)}</div>
           </div>
         )}
       />
 
       {!wins.length && !losses.length && !entries.length && !nearMisses.length && !deferred.length && (
-        <p className="text-gray-600 text-xs">No events yet...</p>
+        <p className="text-gray-600 text-[10px]">No events yet...</p>
       )}
     </div>
   );
@@ -741,8 +836,8 @@ function EventSection({
   const rest = sorted.slice(3);
 
   return (
-    <div className="mb-2">
-      <div className="text-xs font-medium text-gray-300 mb-1">
+    <div className="mb-1.5">
+      <div className="text-[10px] sm:text-xs font-medium text-gray-300 mb-0.5">
         {title} ({count})
       </div>
       {preview.map((e, i) => (
@@ -752,12 +847,12 @@ function EventSection({
         <>
           <button
             onClick={onToggle}
-            className="text-xs text-blue-400 hover:text-blue-300 cursor-pointer mt-1"
+            className="text-[10px] text-blue-400 hover:text-blue-300 cursor-pointer mt-0.5"
           >
             {expanded ? "▲ Collapse" : `▼ View all ${count}`}
           </button>
           {expanded && (
-            <div className="max-h-64 overflow-y-auto mt-1">
+            <div className="max-h-48 overflow-y-auto mt-0.5">
               {rest.map((e, i) => (
                 <div key={i}>{renderEvent(e)}</div>
               ))}
@@ -767,23 +862,4 @@ function EventSection({
       )}
     </div>
   );
-}
-
-// ── Chart data builder ───────────────────────────────────────────
-function buildChartData(accounts: Record<string, AccountData>) {
-  const timeMap: Record<number, Record<string, number>> = {};
-
-  for (const [, acct] of Object.entries(accounts)) {
-    for (const pt of acct.equity_history || []) {
-      if (!timeMap[pt.ts]) timeMap[pt.ts] = {};
-      timeMap[pt.ts][acct.label] = pt.equity;
-    }
-  }
-
-  return Object.entries(timeMap)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([ts, values]) => ({
-      time: new Date(Number(ts) * 1000).toLocaleTimeString(),
-      ...values,
-    }));
 }
