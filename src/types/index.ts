@@ -3,14 +3,15 @@ export interface BotState {
   uptime_seconds: number;
   active_seconds: number;
   paused_seconds: number;
+  total_rtds_down_seconds?: number;
   bot_paused: boolean;
   btc_price: number | null;
   chainlink_btc_price: number | null;
   rtds_connected: boolean;
   rtds_stale: boolean;
-  rtds_seconds_since_update: number;
+  rtds_seconds_since_update: number | null;
   clob_ws_connected: boolean;
-  clob_ws_seconds_since_update: number;
+  clob_ws_seconds_since_update: number | null;
   yes_price: number;
   no_price: number;
   btc_move: number;

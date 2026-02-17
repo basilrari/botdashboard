@@ -2,7 +2,7 @@
 
 import { useBotState } from "@/hooks/use-bot-state";
 import { THRESHOLD, MODE_CONFIG } from "@/config/constants";
-import { fmtUsd } from "@/lib/format";
+import { fmtUsd, safeToFixed } from "@/lib/format";
 import {
   MetricCard,
   EquityChart,
@@ -41,6 +41,7 @@ export default function Dashboard() {
         uptimeSeconds={state.uptime_seconds}
         activeSeconds={state.active_seconds}
         pausedSeconds={state.paused_seconds}
+        rtdsDownSeconds={state.total_rtds_down_seconds ?? 0}
       />
 
       {state.bot_paused && <PausedBanner />}
@@ -51,7 +52,7 @@ export default function Dashboard() {
           icon="⛓️"
           label="Chainlink BTC"
           value={state.chainlink_btc_price ? fmtUsd(state.chainlink_btc_price) : "STALE"}
-          sublabel={state.rtds_stale ? `⚠️ ${state.rtds_seconds_since_update.toFixed(0)}s` : undefined}
+          sublabel={state.rtds_stale ? `⚠️ ${safeToFixed(state.rtds_seconds_since_update, 0)}s` : undefined}
           alert={state.rtds_stale}
         />
         <MetricCard icon="🅱️" label="Binance BTC" value={fmtUsd(state.btc_price)} />
@@ -68,13 +69,13 @@ export default function Dashboard() {
         <MetricCard
           icon={Math.abs(btcMove) >= THRESHOLD ? "✅" : "❌"}
           label="BN Move"
-          value={`$${btcMove >= 0 ? "+" : ""}${btcMove.toFixed(0)}`}
+          value={`$${btcMove >= 0 ? "+" : ""}${safeToFixed(btcMove, 0)}`}
           valueColor={Math.abs(btcMove) >= THRESHOLD ? "text-green-400" : "text-gray-400"}
         />
         <MetricCard
           icon={Math.abs(clMove) >= THRESHOLD ? "✅" : "❌"}
           label="CL Move"
-          value={`$${clMove >= 0 ? "+" : ""}${clMove.toFixed(0)}`}
+          value={`$${clMove >= 0 ? "+" : ""}${safeToFixed(clMove, 0)}`}
           valueColor={Math.abs(clMove) >= THRESHOLD ? "text-green-400" : "text-gray-400"}
         />
         <MetricCard

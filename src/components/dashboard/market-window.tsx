@@ -1,4 +1,5 @@
 import type { MarketInfo } from "@/types";
+import { safeToFixed } from "@/lib/format";
 
 interface MarketWindowProps {
   market: MarketInfo;
@@ -26,26 +27,26 @@ export function MarketWindow({ market, yesPrice, noPrice, windowPct }: MarketWin
       <div className="grid grid-cols-4 gap-3 mb-3 text-center">
         <div>
           <div className="metric-label">Elapsed</div>
-          <div className="text-base font-mono">{market.seconds_elapsed.toFixed(0)}s</div>
+          <div className="text-base font-mono">{safeToFixed(market.seconds_elapsed, 0)}s</div>
         </div>
         <div>
           <div className="metric-label">Left</div>
-          <div className="text-base font-mono">{market.seconds_remaining.toFixed(0)}s</div>
+          <div className="text-base font-mono">{safeToFixed(market.seconds_remaining, 0)}s</div>
         </div>
         <div>
           <div className="metric-label">YES</div>
-          <div className="text-base font-mono">{yesPrice.toFixed(3)}</div>
+          <div className="text-base font-mono">{safeToFixed(yesPrice, 3)}</div>
         </div>
         <div>
           <div className="metric-label">NO</div>
-          <div className="text-base font-mono">{noPrice.toFixed(3)}</div>
+          <div className="text-base font-mono">{safeToFixed(noPrice, 3)}</div>
         </div>
       </div>
       <div className="progress-track">
-        <div className="progress-fill" style={{ width: `${windowPct * 100}%` }} />
+        <div className="progress-fill" style={{ width: `${(windowPct ?? 0) * 100}%` }} />
       </div>
       <p className="text-xs text-gray-500 mt-1.5 text-right">
-        {(windowPct * 100).toFixed(0)}%
+        {safeToFixed((windowPct ?? 0) * 100, 0)}%
       </p>
     </div>
   );

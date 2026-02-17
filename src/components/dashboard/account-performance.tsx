@@ -1,6 +1,6 @@
 import type { AccountData } from "@/types";
 import { MODE_CONFIG } from "@/config/constants";
-import { fmtUsd } from "@/lib/format";
+import { fmtUsd, safeToFixed } from "@/lib/format";
 
 interface AccountPerformanceProps {
   accounts: Record<string, AccountData>;
@@ -35,13 +35,13 @@ export function AccountPerformance({ accounts }: AccountPerformanceProps) {
               <div className="flex justify-between">
                 <span className="text-gray-400">Win Rate</span>
                 <span className="font-mono">
-                  {acct.total_trades > 0 ? `${(acct.win_rate * 100).toFixed(0)}%` : "—"}
+                  {acct.total_trades > 0 ? `${safeToFixed((acct.win_rate ?? 0) * 100, 0)}%` : "—"}
                 </span>
               </div>
               {acct.pending_trade && (
                 <div className="mt-1.5 p-2 rounded bg-blue-500/10 border border-blue-500/20 text-xs">
                   🔄 <strong>{acct.pending_trade.side}</strong> @{" "}
-                  {acct.pending_trade.pm_price.toFixed(4)} ({fmtUsd(acct.pending_trade.size_usdc)})
+                  {safeToFixed(acct.pending_trade.pm_price, 4)} ({fmtUsd(acct.pending_trade.size_usdc)})
                 </div>
               )}
             </div>

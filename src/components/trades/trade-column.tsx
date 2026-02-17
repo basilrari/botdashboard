@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { AccountData, DeferredResolution, TradeEvent } from "@/types";
 import type { ModeConfig } from "@/types";
-import { fmtTime, fmtUsd } from "@/lib/format";
+import { fmtTime, fmtUsd, safeToFixed } from "@/lib/format";
 import { EventSection } from "./event-section";
 
 interface TradeColumnProps {
@@ -41,9 +41,9 @@ export function TradeColumn({ acct, config, mode, deferred }: TradeColumnProps) 
             const secsToCheck = Math.max(0, d.check_after - Date.now() / 1000);
             return (
               <div key={i} className="trade-card waiting">
-                <strong>{d.strategy}</strong> — {d.side} @ {d.entry_price.toFixed(4)}
+                <strong>{d.strategy}</strong> — {d.side} @ {safeToFixed(d.entry_price, 4)}
                 <br />
-                {fmtUsd(d.size_usdc)} • ~{(secsToCheck / 60).toFixed(0)}m
+                {fmtUsd(d.size_usdc)} • ~{safeToFixed(secsToCheck / 60, 0)}m
               </div>
             );
           })}
@@ -60,14 +60,14 @@ export function TradeColumn({ acct, config, mode, deferred }: TradeColumnProps) 
           <div className="trade-card win">
             <span className="text-green-400 font-semibold">+{fmtUsd(e.pnl)}</span>
             {e.fee ? <span className="text-gray-500 text-[10px]"> (fee {fmtUsd(e.fee)})</span> : null}
-            <span className="text-gray-500"> {e.pct_return?.toFixed(1)}%</span>
+            <span className="text-gray-500"> {safeToFixed(e.pct_return, 1)}%</span>
             <br />
             <span className="text-gray-400 text-[10px]">
-              {e.strategy} | {e.side} @ {e.entry_price?.toFixed(4)} | W: {e.winning_side}
+              {e.strategy} | {e.side} @ {safeToFixed(e.entry_price, 4)} | W: {e.winning_side}
             </span>
             {(e.binance_btc_move != null || e.size_usdc != null) && (
               <div className="text-gray-500 text-[10px] mt-0.5">
-                BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | {fmtUsd(e.size_usdc)}
+                BN: ${safeToFixed(e.binance_btc_move, 0)} | CL: ${safeToFixed(e.chainlink_btc_move, 0)} | {fmtUsd(e.size_usdc)}
               </div>
             )}
             <div className="text-gray-600 text-[9px]">{fmtTime(e.time)}</div>
@@ -86,11 +86,11 @@ export function TradeColumn({ acct, config, mode, deferred }: TradeColumnProps) 
             <span className="text-red-400 font-semibold">{fmtUsd(e.pnl)}</span>
             <br />
             <span className="text-gray-400 text-[10px]">
-              {e.strategy} | {e.side} @ {e.entry_price?.toFixed(4)} | W: {e.winning_side}
+              {e.strategy} | {e.side} @ {safeToFixed(e.entry_price, 4)} | W: {e.winning_side}
             </span>
             {(e.binance_btc_move != null || e.size_usdc != null) && (
               <div className="text-gray-500 text-[10px] mt-0.5">
-                BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | {fmtUsd(e.size_usdc)}
+                BN: ${safeToFixed(e.binance_btc_move, 0)} | CL: ${safeToFixed(e.chainlink_btc_move, 0)} | {fmtUsd(e.size_usdc)}
               </div>
             )}
             <div className="text-gray-600 text-[9px]">{fmtTime(e.time)}</div>
@@ -106,10 +106,10 @@ export function TradeColumn({ acct, config, mode, deferred }: TradeColumnProps) 
         onToggle={() => toggleSection("entries")}
         renderEvent={(e) => (
           <div className="trade-card entry">
-            <strong>{e.side}</strong> @ {e.entry_price?.toFixed(4)}
+            <strong>{e.side}</strong> @ {safeToFixed(e.entry_price, 4)}
             <span className="text-gray-500"> ({fmtUsd(e.size_usdc)})</span>
             <div className="text-gray-500 text-[10px] mt-0.5">
-              BN: ${e.binance_btc_move?.toFixed(0)} | CL: ${e.chainlink_btc_move?.toFixed(0)} | T: {e.tick}s
+              BN: ${safeToFixed(e.binance_btc_move, 0)} | CL: ${safeToFixed(e.chainlink_btc_move, 0)} | T: {e.tick ?? 0}s
             </div>
             <div className="text-gray-600 text-[9px]">{fmtTime(e.time)}</div>
           </div>

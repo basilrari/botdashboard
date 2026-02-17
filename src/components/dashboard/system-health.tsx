@@ -2,6 +2,7 @@ import type { BotState } from "@/types";
 import type { MarketInfo } from "@/types";
 import { HealthCard } from "@/components/ui";
 import { getClobWsStatus } from "@/lib/clob-status";
+import { safeToFixed } from "@/lib/format";
 
 interface SystemHealthProps {
   state: BotState;
@@ -25,7 +26,7 @@ export function SystemHealth({ state, market }: SystemHealthProps) {
                 ? "STALE"
                 : "Disconnected"
           }
-          detail={`${state.rtds_seconds_since_update.toFixed(0)}s ago`}
+          detail={state.rtds_seconds_since_update != null ? `${safeToFixed(state.rtds_seconds_since_update, 0)}s ago` : "—"}
         />
         <HealthCard
           label="Binance API"

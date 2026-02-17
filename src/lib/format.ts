@@ -6,8 +6,8 @@ export function fmtTime(iso: string): string {
   }
 }
 
-export function fmtUptime(s: number): string {
-  if (s <= 0) return "0s";
+export function fmtUptime(s: number | null | undefined): string {
+  if (s == null || typeof s !== "number" || Number.isNaN(s) || s <= 0) return "0s";
   const days = Math.floor(s / 86400);
   const hrs = Math.floor((s % 86400) / 3600);
   const mins = Math.floor((s % 3600) / 60);
@@ -18,6 +18,12 @@ export function fmtUptime(s: number): string {
 }
 
 export function fmtUsd(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null || typeof n !== "number" || Number.isNaN(n)) return "—";
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Safe .toFixed: avoids crash when value is null/undefined/NaN. */
+export function safeToFixed(value: number | null | undefined, digits: number): string {
+  if (value == null || typeof value !== "number" || Number.isNaN(value)) return "—";
+  return value.toFixed(digits);
 }
