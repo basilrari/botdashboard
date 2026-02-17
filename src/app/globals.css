@@ -24,19 +24,19 @@ body {
 
 /* Dashboard container — prevents overflow */
 .dashboard-container {
-  max-width: 1200px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 0.75rem;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
   overflow-x: hidden;
 }
 
 @media (min-width: 640px) {
   .dashboard-container {
-    padding: 1rem;
-    gap: 0.75rem;
+    padding: 1.25rem;
+    gap: 1rem;
   }
 }
 
@@ -44,16 +44,16 @@ body {
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.75rem;
+  border-radius: 12px;
+  padding: 1rem;
   transition: border-color 0.2s ease;
   overflow: hidden;
 }
 
 @media (min-width: 640px) {
   .card {
-    padding: 1rem;
-    border-radius: 12px;
+    padding: 1.25rem;
+    border-radius: 14px;
   }
 }
 
@@ -63,7 +63,7 @@ body {
 
 /* Metric cards */
 .metric-value {
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   word-break: break-all;
@@ -71,12 +71,12 @@ body {
 
 @media (min-width: 640px) {
   .metric-value {
-    font-size: 1.25rem;
+    font-size: 1.375rem;
   }
 }
 
 .metric-label {
-  font-size: 0.6rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-secondary);
@@ -84,7 +84,7 @@ body {
 
 @media (min-width: 640px) {
   .metric-label {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
   }
 }
 
@@ -92,46 +92,48 @@ body {
 .uptime-bar {
   display: flex;
   justify-content: center;
-  gap: 1rem;
-  padding: 0.4rem 0.75rem;
+  gap: 1.25rem;
+  padding: 0.6rem 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.7rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
 }
 
 .uptime-item {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.4rem;
 }
 
 .uptime-label {
   color: var(--text-muted);
   text-transform: uppercase;
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   letter-spacing: 0.05em;
 }
 
 .uptime-value {
   font-family: ui-monospace, monospace;
   font-weight: 600;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
 }
 
 @media (min-width: 640px) {
   .uptime-bar {
     gap: 2rem;
-    font-size: 0.8rem;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.9rem;
+    border-radius: 12px;
   }
-  .uptime-label { font-size: 0.65rem; }
-  .uptime-value { font-size: 0.8rem; }
+  .uptime-label { font-size: 0.7rem; }
+  .uptime-value { font-size: 0.9rem; }
 }
 
 /* Status indicators */
 .status-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   display: inline-block;
   flex-shrink: 0;
@@ -151,7 +153,7 @@ body {
 .progress-track {
   background: #1e293b;
   border-radius: 999px;
-  height: 5px;
+  height: 6px;
   overflow: hidden;
 }
 
@@ -165,12 +167,12 @@ body {
 /* Chart container */
 .chart-container {
   width: 100%;
-  height: 250px;
+  height: 280px;
 }
 
 @media (min-width: 640px) {
   .chart-container {
-    height: 300px;
+    height: 340px;
   }
 }
 
@@ -178,10 +180,10 @@ body {
 .trade-card {
   background: rgba(255,255,255,0.03);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.4rem 0.5rem;
-  margin-bottom: 0.3rem;
-  font-size: 0.7rem;
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.8rem;
   overflow: hidden;
   word-break: break-word;
 }
@@ -196,8 +198,8 @@ body {
 .paused-banner {
   background: linear-gradient(90deg, rgba(255,82,82,0.15), rgba(255,82,82,0.05));
   border: 1px solid rgba(255,82,82,0.3);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  padding: 0.65rem 1rem;
   animation: banner-pulse 2s infinite;
 }
 
