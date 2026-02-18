@@ -27,3 +27,17 @@ export function safeToFixed(value: number | null | undefined, digits: number): s
   if (value == null || typeof value !== "number" || Number.isNaN(value)) return "—";
   return value.toFixed(digits);
 }
+
+/**
+ * Tailwind class for BTC move intensity: gray below min, green above min, intense green above full.
+ * minThreshold = entry ($17), fullThreshold = full size ($44).
+ */
+export function getMoveValueColor(
+  absMove: number,
+  minThreshold: number,
+  fullThreshold: number
+): string {
+  if (absMove < minThreshold) return "text-gray-400";
+  if (absMove < fullThreshold) return "text-green-500";
+  return "text-emerald-400 font-semibold";
+}

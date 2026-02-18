@@ -1,8 +1,8 @@
 "use client";
 
 import { useBotState } from "@/hooks/use-bot-state";
-import { THRESHOLD, MODE_CONFIG } from "@/config/constants";
-import { fmtUsd, safeToFixed } from "@/lib/format";
+import { THRESHOLD, THRESHOLD_FULL, MODE_CONFIG } from "@/config/constants";
+import { fmtUsd, safeToFixed, getMoveValueColor } from "@/lib/format";
 import {
   MetricCard,
   EquityChart,
@@ -69,25 +69,31 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* BTC Moves */}
+      {/* BTC Moves — $17 = entry, $44 = full size; colors intensify above those */}
       <div className="grid grid-cols-3 gap-3">
         <MetricCard
           icon={Math.abs(btcMove) >= THRESHOLD ? "✅" : "❌"}
           label="BN Move"
           value={`$${btcMove >= 0 ? "+" : ""}${safeToFixed(btcMove, 0)}`}
-          valueColor={Math.abs(btcMove) >= THRESHOLD ? "text-green-400" : "text-gray-400"}
+          valueColor={getMoveValueColor(Math.abs(btcMove), THRESHOLD, THRESHOLD_FULL)}
         />
         <MetricCard
           icon={Math.abs(clMove) >= THRESHOLD ? "✅" : "❌"}
           label="CL Move"
           value={`$${clMove >= 0 ? "+" : ""}${safeToFixed(clMove, 0)}`}
-          valueColor={Math.abs(clMove) >= THRESHOLD ? "text-green-400" : "text-gray-400"}
+          valueColor={getMoveValueColor(Math.abs(clMove), THRESHOLD, THRESHOLD_FULL)}
         />
         <MetricCard
           icon={Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD ? "✅" : "⏳"}
-          label="Dual ±$26"
+          label="Dual ±$17"
           value={Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD ? "YES" : "No"}
-          valueColor={Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD ? "text-green-400" : "text-yellow-400"}
+          valueColor={
+            Math.abs(btcMove) >= THRESHOLD && Math.abs(clMove) >= THRESHOLD
+              ? Math.abs(btcMove) >= THRESHOLD_FULL && Math.abs(clMove) >= THRESHOLD_FULL
+                ? "text-emerald-400 font-semibold"
+                : "text-green-500"
+              : "text-yellow-400"
+          }
         />
       </div>
 
