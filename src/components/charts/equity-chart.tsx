@@ -9,9 +9,41 @@ import {
   UTCTimestamp,
   ColorType,
   CrosshairMode,
+  TickMarkType,
 } from "lightweight-charts";
 import type { AccountData } from "@/types";
 import { MODE_CONFIG } from "@/config/constants";
+
+/** Format Unix timestamp (seconds) in local time for chart axis/crosshair */
+const MAX_CHART_POINTS = 8000; // Downsample above this to keep full range without lag
+
+function downsample<T extends { time: number }>(data: T[], maxPoints: number): T[] {
+  if (data.length <= maxPoints) return data;
+  const step = (data.length - 1) / (maxPoints - 1);
+  const out: T[] = [];
+  for (let i = 0; i < maxPoints; i++) {
+    const idx = i === maxPoints - 1 ? data.length - 1 : Math.round(i * step);
+    out.push(data[idx]);
+  }
+  return out;
+}
+
+function formatLocalTick(time: number, tickMarkType: TickMarkType): string {
+  const d = new Date(time * 1000);
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return d.toLocaleDateString(undefined, { year: "numeric" });
+    case TickMarkType.Month:
+      return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    case TickMarkType.DayOfMonth:
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    case TickMarkType.TimeWithSeconds:
+      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    case TickMarkType.Time:
+    default:
+      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+}
 
 interface EquityChartProps {
   accounts: Record<string, AccountData>;
@@ -46,6 +78,11 @@ export function EquityChart({ accounts }: EquityChartProps) {
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,
+        tickMarkFormatter: (time, tickMarkType) =>
+          formatLocalTick(Number(time), tickMarkType),
+      },
+      localization: {
+        timeFormatter: (time) => new Date(Number(time) * 1000).toLocaleString(),
       },
       handleScroll: { vertTouchDrag: false },
       handleScale: { axisPressedMouseMove: true },
@@ -100,27 +137,23 @@ export function EquityChart({ accounts }: EquityChartProps) {
       if (history.length === 0) continue;
       hasData = true;
 
-      const data = history
+      let data = history
         .map((pt) => ({
           time: pt.ts as UTCTimestamp,
           value: pt.equity,
         }))
         .sort((a, b) => a.time - b.time);
+      data = downsample(data, MAX_CHART_POINTS);
 
       series.setData(data);
     }
 
     if (hasData && !initialRangeSet.current && chartRef.current) {
       initialRangeSet.current = true;
-      const threeHoursAgo = (Math.floor(Date.now() / 1000) - 3 * 3600) as UTCTimestamp;
-      const now = Math.floor(Date.now() / 1000) as UTCTimestamp;
       try {
-        chartRef.current.timeScale().setVisibleRange({
-          from: threeHoursAgo,
-          to: now,
-        });
-      } catch {
         chartRef.current.timeScale().fitContent();
+      } catch {
+        // ignore
       }
     }
   }, [accounts]);
