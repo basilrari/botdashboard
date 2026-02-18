@@ -10,6 +10,7 @@ import {
   DashboardHeader,
   UptimeBar,
   PausedBanner,
+  ResolutionTimeoutBanner,
   MarketWindow,
   AccountPerformance,
   DecisionLog,
@@ -45,6 +46,10 @@ export default function Dashboard() {
       />
 
       {state.bot_paused && <PausedBanner />}
+
+      {(state.resolution_timeout_notifications?.length ?? 0) > 0 && (
+        <ResolutionTimeoutBanner notifications={state.resolution_timeout_notifications!} />
+      )}
 
       {/* Live Prices */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -78,11 +78,11 @@ export function EquityChart({ accounts }: EquityChartProps) {
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,
-        tickMarkFormatter: (time, tickMarkType) =>
+        tickMarkFormatter: (time: number, tickMarkType: TickMarkType) =>
           formatLocalTick(Number(time), tickMarkType),
       },
       localization: {
-        timeFormatter: (time) => new Date(Number(time) * 1000).toLocaleString(),
+        timeFormatter: (time: number) => new Date(Number(time) * 1000).toLocaleString(),
       },
       handleScroll: { vertTouchDrag: false },
       handleScale: { axisPressedMouseMove: true },

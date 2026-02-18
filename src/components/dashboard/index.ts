@@ -1,6 +1,7 @@
 export { DashboardHeader } from "./dashboard-header";
 export { UptimeBar } from "./uptime-bar";
 export { PausedBanner } from "./paused-banner";
+export { ResolutionTimeoutBanner } from "./resolution-timeout-banner";
 export { MarketWindow } from "./market-window";
 export { AccountPerformance } from "./account-performance";
 export { DecisionLog } from "./decision-log";

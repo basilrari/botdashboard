@@ -21,7 +21,17 @@ export interface BotState {
   accounts: Record<string, AccountData>;
   decision_log: DecisionEntry[];
   deferred_resolutions: DeferredResolution[];
+  resolution_timeout_notifications?: ResolutionTimeoutNotification[];
   api_health_log?: ApiHealthEntry[];
+}
+
+export interface ResolutionTimeoutNotification {
+  slug: string;
+  mode: string;
+  at: string;
+  message: string;
+  side?: string;
+  size_usdc?: number;
 }
 
 export interface MarketInfo {
